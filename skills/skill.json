@@ -1,0 +1,141 @@
+{
+  "schema": "https://openskill.org/schema/v1",
+  "name": "cron-scheduler",
+  "description": "Cross-platform cron-like scheduler with task management and execution history",
+  "version": "0.1.0",
+  "entry_points": {
+    "cli": "cron-cli",
+    "daemon": "cron-scheduler-daemon"
+  },
+  "tools": [
+    {
+      "name": "add_task",
+      "description": "Add a new scheduled task",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Task name (unique)"},
+          "cron": {"type": "string", "description": "Cron expression (e.g., '0 2 * * *' or @daily)"},
+          "command": {"type": "string", "description": "Shell command to execute"},
+          "description": {"type": "string"},
+          "tags": {"type": "array", "items": {"type": "string"}},
+          "timeout": {"type": "integer", "default": 0},
+          "working_dir": {"type": "string"},
+          "environment": {"type": "object", "additionalProperties": {"type": "string"}},
+          "retry": {
+            "type": "object",
+            "properties": {
+              "max_attempts": {"type": "integer"},
+              "delay": {"type": "integer"}
+            }
+          },
+          "priority": {"type": "integer", "default": 5, "minimum": 1, "maximum": 10},
+          "owner": {"type": "string"}
+        },
+        "required": ["name", "cron", "command"]
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "success": {"type": "boolean"},
+          "message": {"type": "string"}
+        }
+      }
+    },
+    {
+      "name": "list_tasks",
+      "description": "List all tasks",
+      "parameters": {},
+      "returns": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {"type": "string"},
+            "cron": {"type": "string"},
+            "command": {"type": "string"},
+            "enabled": {"type": "boolean"},
+            "description": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "timeout": {"type": "integer"},
+            "working_dir": {"type": "string"},
+            "environment": {"type": "object"},
+            "retry": {"type": "object"},
+            "priority": {"type": "integer"},
+            "owner": {"type": "string"},
+            "created_at": {"type": "string"},
+            "next_run": {"type": "string"}
+          }
+        }
+      }
+    },
+    {
+      "name": "remove_task",
+      "description": "Remove a task by name",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"}
+        },
+        "required": ["name"]
+      },
+      "returns": {"type": "boolean"}
+    },
+    {
+      "name": "get_task_history",
+      "description": "Get execution history for tasks",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_name": {"type": "string", "description": "Optional task name to filter"}
+        }
+      },
+      "returns": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "task": {"type": "string"},
+            "executed_at": {"type": "string"},
+            "exit_code": {"type": "integer"},
+            "output": {"type": "string"}
+          }
+        }
+      }
+    },
+    {
+      "name": "pause_scheduler",
+      "description": "Pause the scheduler (stop executing tasks)",
+      "parameters": {},
+      "returns": {"type": "boolean"}
+    },
+    {
+      "name": "resume_scheduler",
+      "description": "Resume the scheduler",
+      "parameters": {},
+      "returns": {"type": "boolean"}
+    },
+    {
+      "name": "get_status",
+      "description": "Get scheduler status",
+      "parameters": {},
+      "returns": {
+        "type": "object",
+        "properties": {
+          "running": {"type": "boolean"},
+          "paused": {"type": "boolean"},
+          "tasks_count": {"type": "integer"}
+        }
+      }
+    }
+  ],
+  "mcp_server": {
+    "transport": "sse",
+    "endpoints": {
+      "sse": "/sse",
+      "messages": "/messages",
+      "tools": "/tools"
+    },
+    "default_port": 8000
+  }
+}
