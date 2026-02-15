@@ -170,6 +170,41 @@ black src/ tests/
 ruff check src/ tests/
 ```
 
+## 发布
+
+项目使用 GitHub Actions 自动发布到 PyPI。
+
+### 发布流程
+
+1. **配置 PyPI 可信发布**:
+   - 访问 [PyPI 项目设置](https://pypi.org/manage/project/cron-cli-scheduler/settings/publishing/)
+   - 添加新的可信发布者：
+     - 提供者：GitHub
+     - 仓库：`bonashen/cron-cli-scheduler`（请替换为你的用户名/组织）
+     - 工作流：`.github/workflows/release.yml`
+     - 环境：`pypi`
+
+2. **创建标签并发布**:
+   ```bash
+   # 更新版本号（编辑 pyproject.toml 中的 version）
+   git add pyproject.toml
+   git commit -m "bump version to 0.1.1"
+   
+   # 创建标签
+   git tag v0.1.1
+   git push origin v0.1.1
+   ```
+
+3. **GitHub Actions 将自动**:
+   - 构建包
+   - 发布到 PyPI
+   - 发布到 TestPyPI
+   - 创建 GitHub Release
+
+### 手动触发
+
+也可以通过 GitHub 网站的 Actions 页面手动触发发布工作流。
+
 ## 许可证
 
 MIT License
