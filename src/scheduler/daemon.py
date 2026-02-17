@@ -17,7 +17,6 @@ from scheduler.executor import TaskExecutor
 from scheduler.storage import TaskStorage
 
 
-# Windows compatibility: use global flag for signal handling
 _shutdown_requested = False
 
 
@@ -34,6 +33,7 @@ def setup_logging() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.FileHandler(LOG_FILE),
+            logging.StreamHandler(sys.stdout),
         ],
     )
 
@@ -84,13 +84,31 @@ class SchedulerDaemon:
         write_pid()
 
         logger = logging.getLogger(__name__)
-        logger.info("Starting scheduler daemon...")
-
+        
         self._setup_signal_handlers()
         
         tasks = [asyncio.create_task(self.scheduler.start())]
         
-        # Start MCP server if enabled
+        stats = self.storage.get_stats()
+        enabled_tasks = stats["enabled_tasks"]
+        
+        sys.stdout.write("\n")
+        sys.stdout.write("=" * 50 + "\n")
+        sys.stdout.write("  Cron Scheduler Daemon v0.2.1\n")
+        sys.stdout.write("=" * 50 + "\n")
+        sys.stdout.write(f"  Data directory: {self.storage.data_dir}\n")
+        sys.stdout.write(f"  Total tasks:   {stats['total_tasks']}\n")
+        sys.stdout.write(f"  Enabled tasks: {enabled_tasks}\n")
+        sys.stdout.write(f"  MCP server:    {'Enabled' if self.enable_mcp else 'Disabled'}\n")
+        if self.enable_mcp:
+            sys.stdout.write(f"  MCP endpoint:  http://{self.mcp_host}:{self.mcp_port}/sse\n")
+        sys.stdout.write("-" * 50 + "\n")
+        sys.stdout.write("  Scheduler started\n")
+        sys.stdout.write("=" * 50 + "\n")
+        sys.stdout.flush()
+        
+        logger.info(f"Scheduler started with {enabled_tasks} enabled tasks")
+        
         if self.enable_mcp:
             logger.info(f"Starting MCP server on {self.mcp_host}:{self.mcp_port}")
             from scheduler.mcp_server import create_mcp_app
@@ -104,8 +122,6 @@ class SchedulerDaemon:
             )
             server = uvicorn.Server(config)
             tasks.append(asyncio.create_task(server.serve()))
-        
-        logger.info("Scheduler daemon started")
 
         await self._wait_for_shutdown()
 
