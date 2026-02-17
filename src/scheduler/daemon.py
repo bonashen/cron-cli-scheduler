@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import logging
 import os
+import platform
 import signal
 import sys
 from pathlib import Path
@@ -14,6 +15,16 @@ from scheduler.config import PID_FILE, LOG_FILE, DEFAULT_MCP_HOST, DEFAULT_MCP_P
 from scheduler.core import Scheduler
 from scheduler.executor import TaskExecutor
 from scheduler.storage import TaskStorage
+
+
+# Windows compatibility: use global flag for signal handling
+_shutdown_requested = False
+
+
+def _signal_handler(signum, frame):
+    """Signal handler for Windows."""
+    global _shutdown_requested
+    _shutdown_requested = True
 
 
 def setup_logging() -> None:
@@ -55,20 +66,27 @@ class SchedulerDaemon:
         self.scheduler = Scheduler(self.storage)
         self.mcp_server = None
         self._shutdown_event = asyncio.Event()
-    
+
+    def _setup_signal_handlers(self) -> None:
+        """Setup signal handlers for graceful shutdown."""
+        if platform.system() == "Windows":
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                signal.signal(sig, _signal_handler)
+        else:
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                asyncio.get_event_loop().add_signal_handler(
+                    sig, lambda: asyncio.create_task(self.shutdown())
+                )
+
     async def start(self) -> None:
         """Start the daemon."""
         setup_logging()
         write_pid()
-        
+
         logger = logging.getLogger(__name__)
         logger.info("Starting scheduler daemon...")
-        
-        # Setup signal handlers
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            asyncio.get_event_loop().add_signal_handler(
-                sig, lambda: asyncio.create_task(self.shutdown())
-            )
+
+        self._setup_signal_handlers()
         
         tasks = [asyncio.create_task(self.scheduler.start())]
         
@@ -88,9 +106,16 @@ class SchedulerDaemon:
             tasks.append(asyncio.create_task(server.serve()))
         
         logger.info("Scheduler daemon started")
-        
-        # Wait for shutdown
-        await self._shutdown_event.wait()
+
+        await self._wait_for_shutdown()
+
+    async def _wait_for_shutdown(self) -> None:
+        if platform.system() == "Windows":
+            while not _shutdown_requested:
+                await asyncio.sleep(0.1)
+            await self.shutdown()
+        else:
+            await self._shutdown_event.wait()
     
     async def shutdown(self) -> None:
         """Shutdown the daemon."""
