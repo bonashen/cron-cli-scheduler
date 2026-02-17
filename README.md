@@ -53,7 +53,14 @@ cron-cli list
 cron-cli list --json  # 结构化输出
 ```
 
-### 3. 启动服务
+### 3. 查看任务详情
+
+```bash
+cron-cli get daily-backup
+cron-cli get daily-backup --json  # 结构化输出
+```
+
+### 4. 启动服务
 
 ```bash
 # 前台运行（用于测试）
@@ -78,7 +85,7 @@ cron-cli logs --task daily-backup --json
 
 ## 任务文件格式
 
-任务存储在 `~/.cron-cli-scheduler/tasks/` 目录下，每个任务是一个 Markdown 文件：
+任务存储在 `~/.config/cron-scheduler/tasks/` 目录下，每个任务是一个 Markdown 文件：
 
 ```markdown
 ---
@@ -139,6 +146,7 @@ owner: "team-ops"
 | 命令 | 参数 | 说明 |
 |------|------|------|
 | `add` | `--name`, `--cron`, `--command`, `--description`, `--tags`, `--timeout`, `--working-dir`, `--env`, `--retry-max`, `--retry-delay`, `--priority`, `--owner` | 添加任务 |
+| `get` | `<name>`, `--json` | 查看任务详情 |
 | `list` | `--json` | 列出任务 |
 | `remove` | `<name>` | 删除任务 |
 | `logs` | `--task`, `--json` | 查看执行历史 |
@@ -149,7 +157,7 @@ owner: "team-ops"
 ## 目录结构
 
 ```
-~/.cron-cli-scheduler/
+~/.config/cron-scheduler/
 ├── tasks/
 │   ├── backup.md
 │   └── ...

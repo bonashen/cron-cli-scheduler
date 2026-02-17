@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import sys
 from pathlib import Path
@@ -167,6 +168,79 @@ def remove(name: str) -> None:
 
 
 @cli.command()
+@click.argument("name")
+@click.option("--json", "-j", "output_json", is_flag=True, help="Output as JSON")
+def get(name: str, output_json: bool) -> None:
+    """View task details."""
+    storage = get_storage()
+    
+    task = storage.load(name)
+    if task is None:
+        click.echo(f"{Fore.RED}Error: Task not found: {name}", err=True)
+        sys.exit(1)
+    
+    if output_json:
+        click.echo(json.dumps(task.to_dict(), indent=2, ensure_ascii=False))
+    else:
+        # Display detailed task information
+        click.echo(f"{Style.BRIGHT}Task: {task.name}{Style.RESET_ALL}")
+        click.echo(f"{'─' * 50}")
+        
+        # Basic info
+        click.echo(f"{Fore.CYAN}Basic{Style.RESET_ALL}")
+        click.echo(f"  Cron:       {task.cron}")
+        status = f"{Fore.GREEN}enabled" if task.enabled else f"{Fore.RED}disabled"
+        click.echo(f"  Status:     {status}")
+        click.echo(f"  Command:    {task.command}")
+        
+        if task.description:
+            click.echo(f"  Description: {task.description}")
+        
+        # Schedule info
+        next_run = task.get_next_run()
+        if next_run:
+            click.echo(f"\n{Fore.CYAN}Schedule{Style.RESET_ALL}")
+            click.echo(f"  Next run:   {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Metadata
+        click.echo(f"\n{Fore.CYAN}Metadata{Style.RESET_ALL}")
+        if task.tags:
+            click.echo(f"  Tags:       {', '.join(task.tags)}")
+        click.echo(f"  Priority:   {task.priority}")
+        if task.owner:
+            click.echo(f"  Owner:      {task.owner}")
+        
+        # Execution settings
+        click.echo(f"\n{Fore.CYAN}Execution{Style.RESET_ALL}")
+        click.echo(f"  Timeout:    {task.timeout}s" if task.timeout > 0 else "  Timeout:    no limit")
+        if task.retry:
+            click.echo(f"  Retry:      {task.retry.max_attempts} attempts, {task.retry.delay}s delay")
+        if task.working_dir:
+            click.echo(f"  Working dir: {task.working_dir}")
+        
+        # Environment variables (show keys only, values are base64 encoded)
+        if task.environment:
+            click.echo(f"\n{Fore.CYAN}Environment{Style.RESET_ALL}")
+            for key in task.environment:
+                click.echo(f"  {key}")
+        
+        # Timestamps
+        click.echo(f"\n{Fore.CYAN}Timestamps{Style.RESET_ALL}")
+        click.echo(f"  Created:    {task.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        if task.updated_at:
+            click.echo(f"  Updated:    {task.updated_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Recent runs
+        if task.runs:
+            click.echo(f"\n{Fore.CYAN}Recent Runs{Style.RESET_ALL}")
+            click.echo(f"  {'Time':<20} {'Exit':<6} {'Output'}")
+            click.echo(f"  {'─' * 45}")
+            for run in task.runs[:5]:
+                output = run.stdout[:30].replace('\n', ' ') + "..." if len(run.stdout) > 30 else run.stdout
+                click.echo(f"  {run.started_at.strftime('%Y-%m-%d %H:%M:%S'):<20} {run.exit_code:<6} {output}")
+
+
+@cli.command()
 @click.option("--task", "-t", help="Task name to filter")
 @click.option("--json", "-j", "output_json", is_flag=True, help="Output as JSON")
 def logs(task: str | None, output_json: bool) -> None:
@@ -288,5 +362,4 @@ def status() -> None:
 
 
 def main() -> None:
-    import base64
     cli()

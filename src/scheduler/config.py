@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-DATA_DIR = Path.home() / ".cron-cli-scheduler"
+DATA_DIR = Path.home() / ".config" / "cron-scheduler"
 TASKS_DIR = DATA_DIR / "tasks"
 PID_FILE = DATA_DIR / "scheduler.pid"
 LOG_FILE = DATA_DIR / "scheduler.log"

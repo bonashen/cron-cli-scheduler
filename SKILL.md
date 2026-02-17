@@ -8,6 +8,39 @@ license: MIT
 
 # Cron CLI Scheduler
 
+## Installation
+
+### Using uv (Recommended)
+
+Install as a uv tool for seamless CLI access:
+
+```bash
+# Install the tool
+uv tool install cron-cli-scheduler
+
+# Update to latest version
+uv tool upgrade cron-cli-scheduler
+
+# Uninstall
+uv tool uninstall cron-cli-scheduler
+```
+
+### Using uvx (No Installation)
+
+Run directly without installation:
+
+```bash
+uvx cron-cli list
+uvx cron-cli get daily-backup
+uvx cron-scheduler-daemon --mcp
+```
+
+### Using pip
+
+```bash
+pip install cron-cli-scheduler
+```
+
 ## Capabilities
 
 This skill enables Claude to:
@@ -71,6 +104,33 @@ List all scheduled tasks with their metadata.
 
 **Returns:** Array of task objects with all metadata fields.
 
+### get_task
+
+Get detailed information about a specific task.
+
+**Parameters:**
+- `name` (string, required): Task name to retrieve
+
+**Returns:** Task object with all metadata fields including schedule, execution settings, environment variables, and recent runs.
+
+**Example:**
+```json
+{
+  "name": "daily-backup",
+  "cron": "0 2 * * *",
+  "command": "/usr/bin/backup.sh",
+  "enabled": true,
+  "description": "Daily database backup",
+  "tags": ["backup", "database"],
+  "timeout": 3600,
+  "priority": 9,
+  "next_run": "2025-03-23T02:00:00",
+  "runs": [
+    {"started_at": "2025-03-22T02:00:05", "exit_code": 0, "stdout": "Backup completed"}
+  ]
+}
+```
+
 ### remove_task
 
 Remove a task by name.
@@ -132,11 +192,12 @@ Get scheduler status.
 
 ### Troubleshooting Failed Tasks
 
-1. Get task history filtered by task name
-2. Examine exit code and stderr output
-3. Check if working directory exists
-4. Verify environment variables are correct
-5. Test command manually if needed
+1. Get task details: `cron-cli get <task-name>`
+2. Get task history filtered by task name
+3. Examine exit code and stderr output
+4. Check if working directory exists
+5. Verify environment variables are correct
+6. Test command manually if needed
 
 ### Integrating with MCP
 
@@ -164,6 +225,9 @@ cron-cli add \
 
 # Verify task was created
 cron-cli list --json
+
+# View task details
+cron-cli get daily-backup
 
 # Check execution history next day
 cron-cli logs --task daily-backup --json
@@ -231,7 +295,7 @@ for t in tasks:
 
 ### Data Directory
 
-Tasks are stored in `~/.cron-cli-scheduler/tasks/` as Markdown files with YAML Front Matter.
+Tasks are stored in `~/.config/cron-scheduler/tasks/` as Markdown files with YAML Front Matter.
 
 ### MCP Server
 
@@ -325,13 +389,13 @@ Values are automatically decoded when the task runs.
 1. Verify MCP server is running: `cron-cli status`
 2. Check firewall rules for MCP port (default: 8000)
 3. Ensure correct SSE endpoint URL in client configuration
-4. Review daemon logs: `~/.cron-cli-scheduler/scheduler.log`
+4. Review daemon logs: `~/.config/cron-scheduler/scheduler.log`
 
 ### Permission Errors
 
 1. Ensure commands are executable
 2. Check file permissions on working directories
-3. Verify user has permission to write to `~/.cron-cli-scheduler/`
+3. Verify user has permission to write to `~/.config/cron-scheduler/`
 4. Review system logs for detailed error messages
 
 ## Task File Format

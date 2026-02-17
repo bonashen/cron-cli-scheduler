@@ -87,6 +87,13 @@ async def handle_mcp_method(
         tasks = storage.list_all()
         return [t.to_dict() for t in tasks]
     
+    elif method == "get_task":
+        name = params.get("name")
+        task = storage.load(name)
+        if task is None:
+            return None
+        return task.to_dict()
+    
     elif method == "remove_task":
         name = params.get("name")
         if storage.delete(name):
@@ -166,6 +173,15 @@ async def handle_tools(request: Request) -> JSONResponse:
             "name": "list_tasks",
             "description": "List all tasks",
             "parameters": {},
+        },
+        {
+            "name": "get_task",
+            "description": "Get detailed information about a specific task",
+            "parameters": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
         },
         {
             "name": "remove_task",
