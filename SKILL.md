@@ -1,7 +1,7 @@
 ---
 name: cron-cli-scheduler
 description: Cross-platform cron-like scheduler with task management and execution history. A cron-like task scheduler with rich metadata support, Markdown-based storage, and MCP (Model Context Protocol) integration.
-version: 0.1.0
+version: 0.2.0
 author: Cron Scheduler Team
 license: MIT
 ---

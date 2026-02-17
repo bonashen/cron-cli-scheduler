@@ -1,6 +1,6 @@
 [project]
 name = "cron-cli-scheduler"
-version = "0.1.0"
+version = "0.2.0"
 description = "Cross-platform cron-like scheduler with task management and MCP integration"
 readme = "README.md"
 requires-python = ">=3.8"
