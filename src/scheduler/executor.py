@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -27,7 +29,7 @@ def execute_command(
     command: str,
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
-    timeout: int = 0,
+    timeout: int | None = None,
 ) -> ExecutionResult:
     """Execute a shell command with optional working directory and environment."""
     merged_env = os.environ.copy()
@@ -42,7 +44,7 @@ def execute_command(
             env=merged_env,
             capture_output=True,
             text=True,
-            timeout=timeout if timeout > 0 else None,
+            timeout=timeout if timeout else None,
         )
         
         return ExecutionResult(
@@ -77,7 +79,7 @@ class TaskExecutor:
         """Execute a task with retry support."""
         env = task.get_environment_decoded()
         workdir = task.working_dir
-        timeout = task.timeout if task.timeout > 0 else None
+        timeout = task.timeout if task.timeout and task.timeout > 0 else None
         
         max_attempts = task.retry.max_attempts if task.retry else 1
         delay = task.retry.delay if task.retry else 0
@@ -88,14 +90,11 @@ class TaskExecutor:
             run.attempt = attempt
             
             loop = asyncio.get_event_loop()
-            last_result = await loop.run_in_executor(
-                None,
-                execute_command,
-                task.command,
-                workdir,
-                env,
-                timeout,
-            )
+            
+            def run_with_timeout() -> ExecutionResult:
+                return execute_command(task.command, workdir, env, timeout)
+            
+            last_result = await loop.run_in_executor(None, run_with_timeout)
             
             if last_result.success:
                 run.status = TaskStatus.SUCCESS
@@ -103,6 +102,9 @@ class TaskExecutor:
                 run.stdout = last_result.stdout
                 run.stderr = last_result.stderr
                 run.finished_at = datetime.now()
+                
+                self._send_webhook(task, run)
+                
                 return last_result
             
             if attempt < max_attempts and delay > 0:
@@ -114,4 +116,51 @@ class TaskExecutor:
         run.stderr = last_result.stderr
         run.finished_at = datetime.now()
         
+        self._send_webhook(task, run)
+        
         return last_result
+    
+    def _send_webhook(self, task: Task, run: TaskRun) -> None:
+        webhook = task.webhook
+        if not webhook.is_enabled():
+            return
+        
+        should_send = (run.status == TaskStatus.SUCCESS and webhook.on_success) or \
+                      (run.status == TaskStatus.FAILED and webhook.on_failure)
+        if not should_send:
+            return
+        
+        payload = {
+            "task": task.name,
+            "status": run.status.value,
+            "exit_code": run.exit_code,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            "stdout": run.stdout,
+            "stderr": run.stderr,
+            "command": task.command,
+            "cron": task.cron,
+        }
+        
+        run.webhook_called = True
+        run.webhook_url = webhook.url
+        
+        env = os.environ.copy()
+        env["WEBHOOK_URL"] = webhook.url
+        if webhook.token:
+            env["WEBHOOK_TOKEN"] = webhook.token
+        env["WEBHOOK_PAYLOAD"] = json.dumps(payload)
+        
+        try:
+            subprocess.Popen(
+                [sys.executable, "-m", "scheduler.webhook_runner"],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            run.webhook_status = "triggered"
+            logger.info(f"Webhook triggered for task {task.name}")
+        except Exception as e:
+            run.webhook_status = "failed"
+            logger.warning(f"Failed to trigger webhook for task {task.name}: {e}")

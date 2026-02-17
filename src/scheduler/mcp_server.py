@@ -11,7 +11,7 @@ from starlette.responses import Response, JSONResponse, StreamingResponse
 from starlette.routing import Route
 
 from scheduler.core import Scheduler
-from scheduler.models import Task, TaskStatus, RetryPolicy, NotifyConfig
+from scheduler.models import Task, TaskStatus, RetryPolicy, NotifyConfig, WebhookConfig
 from scheduler.storage import TaskStorage
 
 
@@ -76,6 +76,7 @@ async def handle_mcp_method(
             timeout=params.get("timeout", 0),
             retry=RetryPolicy(**params["retry"]) if params.get("retry") else RetryPolicy(),
             notify=NotifyConfig(**params["notify"]) if params.get("notify") else NotifyConfig(),
+            webhook=WebhookConfig(**params["webhook"]) if params.get("webhook") else WebhookConfig(),
             priority=params.get("priority", 5),
             owner=params.get("owner", ""),
         )

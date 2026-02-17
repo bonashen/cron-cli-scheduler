@@ -12,7 +12,7 @@ from colorama import init, Fore, Style
 from croniter import croniter
 
 from scheduler.config import DEFAULT_MCP_HOST, DEFAULT_MCP_PORT
-from scheduler.models import Task, RetryPolicy, NotifyConfig
+from scheduler.models import Task, RetryPolicy, NotifyConfig, WebhookConfig
 from scheduler.storage import TaskStorage
 from scheduler.core import Scheduler
 from scheduler.executor import TaskExecutor
@@ -44,6 +44,10 @@ def cli() -> None:
 @click.option("--retry-delay", type=int, default=0, help="Retry delay in seconds")
 @click.option("--priority", type=int, default=5, help="Priority 1-10 (default 5)")
 @click.option("--owner", default="", help="Task owner")
+@click.option("--webhook-url", default="", help="Webhook URL to call after execution")
+@click.option("--webhook-token", default="", help="Authorization token for webhook (sent as Bearer token)")
+@click.option("--webhook-on-success/--no-webhook-on-success", default=True, help="Call webhook on success")
+@click.option("--webhook-on-failure/--no-webhook-on-failure", default=True, help="Call webhook on failure")
 @click.option("--enabled/--disabled", default=True, help="Enable task immediately")
 def add(
     name: str,
@@ -58,6 +62,10 @@ def add(
     retry_delay: int,
     priority: int,
     owner: str,
+    webhook_url: str,
+    webhook_token: str,
+    webhook_on_success: bool,
+    webhook_on_failure: bool,
     enabled: bool,
 ) -> None:
     """Add a new scheduled task."""
@@ -93,8 +101,14 @@ def add(
         key, value = e.split("=", 1)
         env_dict[key] = f"base64:{base64.b64encode(value.encode()).decode()}"
     
-    # Parse tags
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+    
+    webhook = WebhookConfig(
+        url=webhook_url,
+        token=webhook_token,
+        on_success=webhook_on_success,
+        on_failure=webhook_on_failure,
+    )
     
     try:
         task = Task(
@@ -108,6 +122,7 @@ def add(
             tags=tag_list,
             timeout=timeout,
             retry=RetryPolicy(max_attempts=retry_max, delay=retry_delay),
+            webhook=webhook,
             priority=priority,
             owner=owner,
         )
@@ -218,6 +233,14 @@ def get(name: str, output_json: bool) -> None:
         if task.working_dir:
             click.echo(f"  Working dir: {task.working_dir}")
         
+        if task.webhook and task.webhook.url:
+            click.echo(f"\n{Fore.CYAN}Webhook{Style.RESET_ALL}")
+            click.echo(f"  URL:        {task.webhook.url}")
+            if task.webhook.token:
+                click.echo(f"  Token:      {task.webhook.token[:8]}..." if len(task.webhook.token) > 8 else f"  Token:      {task.webhook.token}")
+            click.echo(f"  On success: {task.webhook.on_success}")
+            click.echo(f"  On failure: {task.webhook.on_failure}")
+        
         # Environment variables (show keys only, values are base64 encoded)
         if task.environment:
             click.echo(f"\n{Fore.CYAN}Environment{Style.RESET_ALL}")
@@ -233,11 +256,12 @@ def get(name: str, output_json: bool) -> None:
         # Recent runs
         if task.runs:
             click.echo(f"\n{Fore.CYAN}Recent Runs{Style.RESET_ALL}")
-            click.echo(f"  {'Time':<20} {'Exit':<6} {'Output'}")
-            click.echo(f"  {'─' * 45}")
+            click.echo(f"  {'Time':<20} {'Exit':<6} {'Webhook':<12} {'Output'}")
+            click.echo(f"  {'─' * 60}")
             for run in task.runs[:5]:
-                output = run.stdout[:30].replace('\n', ' ') + "..." if len(run.stdout) > 30 else run.stdout
-                click.echo(f"  {run.started_at.strftime('%Y-%m-%d %H:%M:%S'):<20} {run.exit_code:<6} {output}")
+                output = run.stdout[:20].replace('\n', ' ') + "..." if len(run.stdout) > 20 else run.stdout
+                webhook_status = f"{run.webhook_status}" if run.webhook_called else "-"
+                click.echo(f"  {run.started_at.strftime('%Y-%m-%d %H:%M:%S'):<20} {run.exit_code:<6} {webhook_status:<12} {output}")
 
 
 @cli.command()

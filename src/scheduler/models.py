@@ -58,6 +58,33 @@ class NotifyConfig(BaseModel):
         )
 
 
+class WebhookConfig(BaseModel):
+    url: str = ""
+    token: str = ""
+    on_success: bool = True
+    on_failure: bool = True
+    
+    def is_enabled(self) -> bool:
+        return bool(self.url)
+    
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "url": self.url,
+            "token": self.token,
+            "on_success": self.on_success,
+            "on_failure": self.on_failure,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> WebhookConfig:
+        return cls(
+            url=data.get("url", ""),
+            token=data.get("token", ""),
+            on_success=data.get("on_success", True),
+            on_failure=data.get("on_failure", True),
+        )
+
+
 class TaskRun(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     started_at: datetime
@@ -68,6 +95,9 @@ class TaskRun(BaseModel):
     stderr: str = ""
     duration_ms: int | None = None
     attempt: int = 1
+    webhook_called: bool = False
+    webhook_url: str | None = None
+    webhook_status: str | None = None
     
     @field_validator("stdout", "stderr")
     @classmethod
@@ -92,6 +122,7 @@ class Task(BaseModel):
     environment: dict[str, str] = Field(default_factory=dict)
     retry: RetryPolicy = Field(default_factory=RetryPolicy)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
+    webhook: WebhookConfig = Field(default_factory=WebhookConfig)
     priority: int = Field(default=5, ge=1, le=10)
     owner: str = ""
     
@@ -248,6 +279,10 @@ class Task(BaseModel):
         if notify_dict["enabled"]:
             metadata["notify"] = notify_dict
         
+        webhook_dict = self.webhook.to_dict()
+        if webhook_dict["url"]:
+            metadata["webhook"] = webhook_dict
+        
         if self.priority != 5:
             metadata["priority"] = self.priority
         
@@ -279,18 +314,19 @@ class Task(BaseModel):
         lines.append("")
         
         if self.runs:
-            lines.append("| 执行时间 | 退出码 | 输出 |")
-            lines.append("|----------|--------|------|")
+            lines.append("| 执行时间 | 退出码 | Webhook | 输出 |")
+            lines.append("|----------|--------|---------|------|")
             
             for run in reversed(self.runs[-self.max_history:]):
                 executed_at = run.started_at.strftime("%Y-%m-%d %H:%M:%S")
                 exit_code = str(run.exit_code) if run.exit_code is not None else "-"
+                webhook = run.webhook_status if run.webhook_called else "-"
                 
-                output = (run.stdout or "")[:100].replace("|", "\\|").replace("\n", " ")
-                if len(run.stdout or "") > 100:
+                output = (run.stdout or "")[:80].replace("|", "\\|").replace("\n", " ")
+                if len(run.stdout or "") > 80:
                     output += "..."
                 
-                lines.append(f"| {executed_at} | {exit_code} | {output} |")
+                lines.append(f"| {executed_at} | {exit_code} | {webhook} | {output} |")
         else:
             lines.append("*No execution history yet*")
         
@@ -332,6 +368,11 @@ class Task(BaseModel):
         else:
             data["notify"] = NotifyConfig()
         
+        if "webhook" in metadata:
+            data["webhook"] = WebhookConfig.from_dict(metadata["webhook"])
+        else:
+            data["webhook"] = WebhookConfig()
+        
         if "last_run" in metadata:
             data["last_run"] = datetime.fromisoformat(metadata["last_run"])
         
@@ -352,28 +393,51 @@ class Task(BaseModel):
         
         runs = []
         
-        table_match = re.search(
-            r'\|\s*执行时间\s*\|\s*退出码\s*\|\s*输出\s*\|\s*\n'
-            r'\|[-\|]+\|\s*\n(.*?)(?=\n## |\Z)',
+        section_match = re.search(
+            r'## Execution History.*?\n(.*?)(?=\n## |\Z)',
             content,
             re.DOTALL
         )
         
-        if table_match:
-            for line in table_match.group(1).strip().split('\n'):
-                if line.startswith('|') and not line.strip().startswith('|---'):
-                    parts = [p.strip() for p in line.split('|')[1:-1]]
-                    if len(parts) >= 3:
-                        try:
-                            run = TaskRun(
-                                started_at=datetime.strptime(parts[0], "%Y-%m-%d %H:%M:%S"),
-                                exit_code=int(parts[1]) if parts[1] != '-' else None,
-                                stdout=parts[2].replace("\\|", "|"),
-                                status=TaskStatus.SUCCESS if parts[1] == '0' else TaskStatus.FAILED,
-                            )
-                            runs.append(run)
-                        except (ValueError, IndexError):
-                            continue
+        if not section_match:
+            return runs
+        
+        table_content = section_match.group(1)
+        
+        for line in table_content.split('\n'):
+            if not line.strip().startswith('|') or '---' in line:
+                continue
+            
+            parts = [p.strip() for p in line.split('|')[1:-1]]
+            if len(parts) < 2:
+                continue
+            
+            try:
+                started_at = datetime.strptime(parts[0], "%Y-%m-%d %H:%M:%S")
+                exit_code = int(parts[1]) if parts[1] != '-' else None
+                
+                webhook_called = False
+                webhook_status = None
+                stdout = ""
+                
+                if len(parts) >= 4:
+                    webhook_called = parts[2] != '-'
+                    webhook_status = parts[2] if webhook_called else None
+                    stdout = parts[3] if len(parts) > 3 else ""
+                elif len(parts) == 3:
+                    stdout = parts[2]
+                
+                run = TaskRun(
+                    started_at=started_at,
+                    exit_code=exit_code,
+                    stdout=stdout.replace("\\|", "|"),
+                    status=TaskStatus.SUCCESS if exit_code == 0 else TaskStatus.FAILED,
+                    webhook_called=webhook_called,
+                    webhook_status=webhook_status,
+                )
+                runs.append(run)
+            except (ValueError, IndexError):
+                continue
         
         return runs
     
@@ -394,6 +458,7 @@ class Task(BaseModel):
             "environment": self.environment,
             "retry": self.retry.to_dict(),
             "notify": self.notify.to_dict(),
+            "webhook": self.webhook.to_dict(),
             "priority": self.priority,
             "owner": self.owner,
             "last_run": self.last_run.isoformat() if self.last_run else None,
